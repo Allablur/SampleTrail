@@ -1,0 +1,2 @@
+[functions.sampletrail-musicbrainz]
+verify_jwt = false
