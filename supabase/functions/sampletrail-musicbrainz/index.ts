@@ -30,7 +30,13 @@ Deno.serve(async req=>{
       // Treat all user words as literal terms rather than Lucene expressions.
       const clean=query.replace(/[+\-!(){}\[\]^"~*?:\\/]|&&|\|\|/g,' ').trim().replace(/\s+/g,' ');
       if(clean.length<2)return send({error:'Enter a track or artist name.'},400);
-      key='search:'+clean.toLowerCase();upstream=MB+'recording?fmt=json&limit=12&query='+encodeURIComponent(clean);
+      const artistFilter=(p.get('artist')||'').trim().replace(/\s+/g,' ');
+      if(artistFilter.length>100)return send({error:'Artist must be 100 characters or fewer.'},400);
+      const literal=(s:string)=>s.replace(/[\\"]/g,'\\$&');
+      const terms=clean.split(' ').slice(0,12).map(t=>`(recording:"${literal(t)}" OR artist:"${literal(t)}")`).join(' AND ');
+      const lucene=artistFilter?`recording:"${literal(clean)}" AND artist:"${literal(artistFilter)}"`:`(recording:"${literal(clean)}"^3 OR artist:"${literal(clean)}"^3 OR (${terms}))`;
+      const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([clean.toLowerCase(),artistFilter.toLowerCase()])));
+      key='search-v2-'+Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('');upstream=MB+'recording?fmt=json&limit=20&query='+encodeURIComponent(lucene);
     }else if(op==='recording'){
       const id=p.get('id')||'';if(!UUID.test(id))return send({error:'Invalid recording ID.'},400);
       key='recording:'+id.toLowerCase();upstream=MB+'recording/'+id+'?fmt=json&inc=artist-credits+recording-rels+isrcs';
