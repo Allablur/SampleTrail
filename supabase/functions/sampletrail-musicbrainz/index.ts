@@ -2,6 +2,8 @@
 const ORIGINS = new Set(['https://allablur.github.io','https://sample-trail.laceyfable2.chatgpt.site']);
 const URL = Deno.env.get('SUPABASE_URL')!;
 const KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const CLIENT_KEYS = new Set<string>(Object.values(JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') || '{}')) as string[]);
+// The public metadata browser client uses a publishable project key, not a user JWT.
 const MB = 'https://musicbrainz.org/ws/2/';
 const TYPE = '9efd9ce9-e702-448b-8e76-641515e8fe62';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -18,6 +20,7 @@ Deno.serve(async req=>{
   const send=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json','Cache-Control':'no-store'}});
   if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
   if(req.method!=='GET'||(origin&&!ORIGINS.has(origin)))return send({error:'Request not allowed'},403);
+  if(!CLIENT_KEYS.has(req.headers.get('apikey')||''))return send({error:'A valid publishable project key is required.'},401);
   try{
     const p=new globalThis.URL(req.url).searchParams,op=p.get('op');
     let upstream:string,key:string;
