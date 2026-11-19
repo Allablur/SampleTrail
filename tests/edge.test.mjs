@@ -1,11 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-let handler;globalThis.Deno={env:{get:k=>k==='SUPABASE_URL'?'https://mock.supabase.co':'SERVER_ONLY'},serve:fn=>handler=fn};
+let handler;globalThis.Deno={env:{get:k=>k==='SUPABASE_URL'?'https://mock.supabase.co':k==='SUPABASE_PUBLISHABLE_KEYS'?JSON.stringify({default:'PUBLIC_TEST'}):'SERVER_ONLY'},serve:fn=>handler=fn};
 await import('../supabase/functions/sampletrail-musicbrainz/index.ts');
 const id='11111111-1111-1111-1111-111111111111', other='22222222-2222-2222-2222-222222222222';
 const type='9efd9ce9-e702-448b-8e76-641515e8fe62';
 const rec={id,title:'Original', 'artist-credit':[{name:'Artist'}], 'first-release-date':'2007-01-01'};
-function req(q){return new Request('https://fn.example/?'+q,{headers:{Origin:'https://allablur.github.io'}})}
+function req(q){return new Request('https://fn.example/?'+q,{headers:{Origin:'https://allablur.github.io',apikey:'PUBLIC_TEST'}})}
+test('missing API key is rejected before a database call',async()=>{globalThis.fetch=()=>{throw new Error('Unexpected fetch')};assert.equal((await handler(new Request('https://fn.example/?op=search&q=test'))).status,401)});
 test('search returns normalized data; server identifies itself to MusicBrainz',async()=>{let urls=[];globalThis.fetch=async(url,options)=>{urls.push(url);if(url.includes('rpc/'))return Response.json(true);if(url.includes('musicbrainz.org')){assert.match(options.headers['User-Agent'],/SampleTrail/);return Response.json({recordings:[rec]})}if(options.method==='POST')return new Response(null,{status:201});return Response.json([])};const res=await handler(req('op=search&q=original'));assert.equal(res.status,200);assert.deepEqual((await res.json()).recordings[0].title,'Original');assert.ok(urls.some(x=>x.includes('recording?fmt=json')))});
 test('recording only returns direct sampling credits, respecting both directions',async()=>{globalThis.fetch=async(url,options)=>{if(url.includes('rpc/'))return Response.json(true);if(url.includes('musicbrainz.org'))return Response.json({...rec,relations:[{'type-id':type,direction:'forward',recording:{...rec,id:other,title:'Sample source'}},{'type-id':type,direction:'backward',recording:{...rec,id:other,title:'Derivative'}},{'type-id':'remix',recording:rec}]});if(options.method==='POST')return new Response(null,{status:201});return Response.json([])};let res=await handler(req('op=recording&id='+id));assert.equal(res.status,200);assert.deepEqual((await res.json()).relations.map(r=>r.direction),['samples','sampled-by']);});
 test('invalid identifiers never reach upstream',async()=>{globalThis.fetch=()=>{throw new Error('Unexpected fetch')};assert.equal((await handler(req('op=recording&id=bad'))).status,400)});
